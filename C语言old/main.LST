@@ -1,0 +1,206 @@
+C51 COMPILER V9.00   MAIN                                                                  06/26/2018 14:02:03 PAGE 1   
+
+
+C51 COMPILER V9.00, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN main.OBJ
+COMPILER INVOKED BY: C:\Program Files (x86)\KEIL\C51\BIN\C51.EXE main.c BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          /*---------------------------------------------------------------------*/
+   2          /* --- STC MCU International Limited ----------------------------------*/
+   3          /* --- STC 1T Series MCU Demo Programme -------------------------------*/
+   4          /* --- Mobile: (86)13922805190 ----------------------------------------*/
+   5          /* --- Fax: 86-0513-55012956,55012947,55012969 ------------------------*/
+   6          /* --- Tel: 86-0513-55012928,55012929,55012966 ------------------------*/
+   7          /* --- Web: www.GXWMCU.com --------------------------------------------*/
+   8          /* --- QQ:  800003751 -------------------------------------------------*/
+   9          /* Èç¹ûÒªÔÚ³ÌÐòÖÐÊ¹ÓÃ´Ë´úÂë,ÇëÔÚ³ÌÐòÖÐ×¢Ã÷Ê¹ÓÃÁËºê¾§¿Æ¼¼µÄ×ÊÁÏ¼°³ÌÐò   */
+  10          /*---------------------------------------------------------------------*/
+  11          
+  12          #include    <reg52.h>
+  13          /*************  ¹¦ÄÜËµÃ÷        **************
+  14          
+  15          ³ÌÐòÊ¹ÓÃP4.7 P4.6 P1.6 P1.7 À´ÑÝÊ¾ÅÜÂíµÆ£¬Êä³öµÍÇý¶¯¡£
+  16          
+  17          ******************************************/
+  18          
+  19          /*************  ±¾µØ³£Á¿ÉùÃ÷    **************/
+  20          sfr     AUXR = 0x8E;
+  21          sfr P3M1  = 0xB1;       //P3M1.n,P3M0.n         =00--->Standard,        01--->push-pull
+  22          sfr P3M0  = 0xB2;       //                                      =10--->pure input,      11--->open drai
+  23          
+  24          sbit reset = P3^5;
+  25          sbit feeddog_to_sgm706 = P3^2;
+  26          sbit feeddog_by_b1300 = P3^3;
+  27          
+  28          #define     MAIN_Fosc           22118400L       //¶¨ÒåÖ÷Ê±ÖÓ
+  29          #define         Timer0_Reload   (65536UL -(MAIN_Fosc / (12*50)))                //Timer 0 ÖÐ¶ÏÆµÂÊ, 50´Î/Ãë
+  30          #define         Timer0_12T()                            AUXR &= ~(1<<7) //Timer0 clodk = fo/12  12·ÖÆµ, default
+  31          #define         Timer0_16bitAutoReload()        TMOD &= ~0x03                                   //16Î»×Ô¶¯ÖØ×°
+  32          #define         Timer0_AsTimer()                        TMOD &= ~4              //Ê±Æ÷0ÓÃ×ö¶¨Ê±Æ÷
+  33          #define         Timer0_Load(n)          TH0 = (n) / 256,        TL0 = (n) % 256
+  34          #define         Timer0_InterruptEnable()        ET0 = 1                         //ÔÊÐíTimer1ÖÐ¶Ï.
+  35          #define         Timer0_Run()                            TR0 = 1                         //ÔÊÐí¶¨Ê±Æ÷0¼ÆÊý
+  36          
+  37          #define         watchdog_of_b1300_first_s  180 //µÚÒ»´ÎÆô¶¯Î¹¹·Ê±¼ä
+  38          #define     watchdog_of_b1300_s    30 //Ê±¼äµ¥Î»s
+  39          
+  40          /*************  ±¾µØ±äÁ¿ÉùÃ÷    **************/
+  41          
+  42          unsigned int dog_time = watchdog_of_b1300_first_s;
+  43          unsigned int dog_count = 0;
+  44          int int_number = 0;
+  45          int dog_flags = 0;
+  46          /*************  ±¾µØº¯ÊýÉùÃ÷    **************/
+  47          
+  48          
+  49          
+  50          /*************  ÑÓÊ±º¯Êý *****************/
+  51          
+  52          void  delay_ms(unsigned int ms)
+  53          {
+  54   1           unsigned int i,j=0,k=0;
+  55   1               i = MAIN_Fosc / 21000UL;
+C51 COMPILER V9.00   MAIN                                                                  06/26/2018 14:02:03 PAGE 2   
+
+  56   1               for(k=0;k<ms;k++)
+  57   1              for(j=0;j<i;j++);
+  58   1      }
+  59          
+  60          /****************¸´Î»º¯Êý**************************
+  61          void reset_b1300(void)
+  62          {
+  63                          reset = 0;
+  64                          delay_ms(250);
+  65                          reset = 1;
+  66          }*/
+  67          
+  68          /******************** IOÅäÖÃº¯Êý **************************
+  69          void GPIO_config(void)
+  70          {
+  71                  P3M1 &= ~4;
+  72                  P3M0 |=  4;      //ÍÆÍìÊä³ö
+  73                  P3M1 |=  8;
+  74                  P3M0 &=  8;      //¸¡¿ÕÊäÈë
+  75                  P3M1 &= ~32;
+  76                  P3M0 |=  32;     //ÍÆÍìÊä³ö
+  77                  reset = 1;
+  78          }*/
+  79          
+  80          /******************* ¶¨Ê±Æ÷0ÖÐ¶ÏÅäÖÃ **********************
+  81          void time0_interrupt_init(void)
+  82          {
+  83                  Timer0_12T(); //¶¨Ê±Æ÷12·ÖÆµ
+  84                  Timer0_16bitAutoReload();//16Î»×Ô¶¯×°ÔØ
+  85                  Timer0_AsTimer();//Ê±Æ÷0ÓÃ×ö¶¨Ê±Æ÷
+  86                  Timer0_Load(Timer0_Reload);
+  87                  Timer0_InterruptEnable();
+  88                  Timer0_Run();
+  89          }*/
+  90          
+  91          /******************* Íâ²¿ÖÐ¶Ï1ÅäÖÃ *********************
+  92          void ext_interrupt1_init(void)
+  93          {
+  94                  IT1 = 1;
+  95                  EX1 = 1;
+  96                  PX1 = 1;//Íâ²¿ÖÐ¶Ï1×î¸ßÓÅÏÈ¼¶
+  97          }*/
+  98          /******************** Ö÷º¯Êý **************************/
+  99          void main(void)
+ 100          {       
+ 101   1              
+ 102   1              //GPIO_config();//GPIO³õÊ¼»¯
+ 103   1              //time0_interrupt_init();//¶¨Ê±Æ÷³õÊ¼»¯
+ 104   1              //ext_interrupt1_init();//Íâ²¿ÖÐ¶Ï³õÊ¼»¯
+ 105   1              /******************** IOÅäÖÃº¯Êý **************************/
+ 106   1              P3M1 &= ~4;
+ 107   1              P3M0 |=  4;      //ÍÆÍìÊä³ö
+ 108   1              P3M1 |=  8;
+ 109   1              P3M0 &=  8;      //¸¡¿ÕÊäÈë
+ 110   1              P3M1 &= ~32;
+ 111   1              P3M0 |=  32;     //ÍÆÍìÊä³ö
+ 112   1              reset = 1;
+ 113   1              /******************* ¶¨Ê±Æ÷0ÖÐ¶ÏÅäÖÃ **********************/
+ 114   1              Timer0_12T(); //¶¨Ê±Æ÷12·ÖÆµ
+ 115   1              Timer0_16bitAutoReload();//16Î»×Ô¶¯×°ÔØ
+ 116   1              Timer0_AsTimer();//Ê±Æ÷0ÓÃ×ö¶¨Ê±Æ÷
+ 117   1              Timer0_Load(Timer0_Reload);
+C51 COMPILER V9.00   MAIN                                                                  06/26/2018 14:02:03 PAGE 3   
+
+ 118   1              Timer0_InterruptEnable();
+ 119   1              Timer0_Run();
+ 120   1              
+ 121   1              /******************* Íâ²¿ÖÐ¶Ï1ÅäÖÃ *********************/
+ 122   1              IT1 = 1;
+ 123   1              EX1 = 1;
+ 124   1              PX1 = 1;//Íâ²¿ÖÐ¶Ï1×î¸ßÓÅÏÈ¼¶
+ 125   1              /*********************************************************/
+ 126   1              EA  = 1;//Ê¹ÄÜ×ÜÖÐ¶Ï
+ 127   1              
+ 128   1              
+ 129   1              while(1)
+ 130   1              {
+ 131   2                      //WDT_reset(D_WDT_SCALE_256);//Î¹¹·£¨±¾Ð¾Æ¬£©
+ 132   2                      feeddog_to_sgm706 = 1;
+ 133   2                      delay_ms(300);
+ 134   2                      feeddog_to_sgm706 = 0;
+ 135   2                      delay_ms(300);  
+ 136   2              }
+ 137   1      }
+ 138          
+ 139          
+ 140          /********************** INT0 Íâ²¿ÖÐ¶Ïº¯Êý ************************/
+ 141          void INT1_int (void) interrupt 2                //½øÖÐ¶ÏÊ±ÒÑ¾­Çå³ý±êÖ¾
+ 142          {
+ 143   1          dog_count = 0;
+ 144   1              int_number++;
+ 145   1      }
+ 146          
+ 147          
+ 148          /********************** Timer0 20msÖÐ¶Ïº¯Êý ************************/
+ 149          void timer0 (void) interrupt 1
+ 150          {       
+ 151   1              dog_count++;
+ 152   1              
+ 153   1              if(dog_count > dog_time){
+ 154   2                      if(dog_flags == 1){
+ 155   3                      reset = 0;
+ 156   3                      delay_ms(100);
+ 157   3                      reset = 1;
+ 158   3                      }
+ 159   2                      dog_count = 0;  //ÇåÁã¼ÆÊýÆ÷£¬Í¬Ê±·ÀÖ¹dog_countÒç³ö
+ 160   2              } 
+ 161   1              
+ 162   1              if(dog_count == 5){     //ÔÚ1ÃëÊ±£¬ÖÐ¶Ï´ÎÊý£¨ÖÐ¶ÏÐÅºÅÆµÂÊÐèÒª´óÓÚ0.5Hz£©£»3~7£º¿´ÃÅ¹·¿ªÊ¼¼ÆÊ±£»>10¿´ÃÅ¹·Í
+             -£Ö¹¼ÆÊ±
+ 163   2                      if(int_number >= 3 && int_number <= 7){
+ 164   3                              if(dog_flags == 1)   //Ä£Ê½±êÖ¾Î»£º0 £º¹Ø±Õ×´Ì¬£» 1£º¿ªÆô×´Ì¬£»µÚÒ»´Î¿ªÆô
+ 165   3                                      dog_time = watchdog_of_b1300_s;
+ 166   3                              dog_flags = 1;       //µÚÒ»´Î¿ªÆô£¬¿´ÃÅ¹·Ê±¼ä¼ä¸ôÎª3min£¬Ö®ºóÎª30s
+ 167   3                              dog_count = 0;
+ 168   3                      }
+ 169   2                      if(int_number >= 10){
+ 170   3                              dog_flags = 0;
+ 171   3                              dog_time = watchdog_of_b1300_first_s;
+ 172   3                              }
+ 173   2                      int_number = 0;
+ 174   2              }
+ 175   1      }
+ 176          
+
+
+C51 COMPILER V9.00   MAIN                                                                  06/26/2018 14:02:03 PAGE 4   
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    297    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      8    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

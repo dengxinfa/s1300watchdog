@@ -1,0 +1,182 @@
+C51 COMPILER V9.00   MAIN                                                                  07/12/2018 14:15:37 PAGE 1   
+
+
+C51 COMPILER V9.00, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN main.OBJ
+COMPILER INVOKED BY: C:\Program Files (x86)\C51\BIN\C51.EXE main.c BROWSE DEBUG OBJECTEXTEND TABS(2)
+
+line level    source
+
+   1          
+   2          /*---------------------------------------------------------------------*/
+   3          
+   4          #include    <reg52.h>
+   5          /*************  π¶ƒ‹Àµ√˜  **************
+   6          
+   7          GL-S1300”≤º˛ø¥√≈π∑
+   8          
+   9          ******************************************/
+  10          
+  11          /*************  ±æµÿ≥£¡ø…˘√˜  **************/
+  12          sfr AUXR = 0x8E;
+  13          sfr P3M1  = 0xB1; //P3M1.n,P3M0.n   =00--->Standard,  01--->push-pull
+  14          sfr P3M0  = 0xB2; //          =10--->pure input,  11--->open drai
+  15          
+  16          sbit reset = P3^5;
+  17          sbit feeddog_to_sgm706 = P3^2;
+  18          sbit feeddog_by_b1300 = P3^3;
+  19          
+  20          #define     MAIN_Fosc   22118400L //∂®“Â÷˜ ±÷”
+  21          #define   Timer0_Reload (65536UL -(MAIN_Fosc / (12*50)))    //Timer 0 ÷–∂œ∆µ¬ , 50¥Œ/√Î
+  22          #define   Timer0_12T()        AUXR &= ~(1<<7) //Timer0 clodk = fo/12  12∑÷∆µ, default
+  23          #define   Timer0_16bitAutoReload()  TMOD &= ~0x03         //16Œª◊‘∂Ø÷ÿ◊∞
+  24          #define   Timer0_AsTimer()      TMOD &= ~4    // ±∆˜0”√◊ˆ∂® ±∆˜
+  25          #define   Timer0_Load(n)    TH0 = (n) / 256,  TL0 = (n) % 256
+  26          #define   Timer0_InterruptEnable()  ET0 = 1       //‘ –ÌTimer1÷–∂œ.
+  27          #define   Timer0_Run()        TR0 = 1       //‘ –Ì∂® ±∆˜0º∆ ˝
+  28          
+  29          #define   watchdog_of_b1300_s    400 // ±º‰µ•Œª 30*50 √øº∆ ˝50¥ŒŒ™“ª√Î
+  30          
+  31          /*************  ±æµÿ±‰¡ø…˘√˜  **************/
+  32          
+  33          //unsigned int dog_time = watchdog_of_b1300_first_s;
+  34          unsigned int dog_time ;//= watchdog_of_b1300_s;
+  35          unsigned int dog_count;// = 0;
+  36          unsigned char int_number; //= 0;
+  37          unsigned char dog_flags; //= 0;
+  38          unsigned char reset_flags;//= 0; //∏¥Œª±Í÷æ£¨œÚ÷˜øÿ∑¢ÀÕ¬ˆ≥Â
+  39          /*************  ±æµÿ∫Ø ˝…˘√˜  **************/
+  40          
+  41          
+  42          
+  43          /*************  —” ±∫Ø ˝ *****************/
+  44          
+  45          void  delay_ms(unsigned int ms)
+  46          {
+  47   1           unsigned int i,j=0,k=0;
+  48   1         i = MAIN_Fosc / 21000UL;
+  49   1         for(k=0;k<ms;k++)
+  50   1              for(j=0;j<i;j++);
+  51   1      }
+  52          
+  53          /******************** ÷˜∫Ø ˝ **************************/
+  54          void main(void)
+  55          { 
+C51 COMPILER V9.00   MAIN                                                                  07/12/2018 14:15:37 PAGE 2   
+
+  56   1       dog_time = watchdog_of_b1300_s;
+  57   1       dog_count= 0;
+  58   1       int_number= 0;
+  59   1       dog_flags= 0;
+  60   1       reset_flags= 1; //∏¥Œª±Í÷æ£¨œÚ÷˜øÿ∑¢ÀÕ¬ˆ≥Â
+  61   1        /******************** IO≈‰÷√∫Ø ˝ **************************/
+  62   1        P3M1 &= ~4;
+  63   1        P3M0 |=  4;  //Õ∆ÕÏ ‰≥ˆ
+  64   1        P3M1 |=  8;
+  65   1        P3M0 &=  8;  //∏°ø’ ‰»Î
+  66   1        P3M1 &= ~32;
+  67   1        P3M0 |=  32;   //Õ∆ÕÏ ‰≥ˆ
+  68   1        reset = 1;
+  69   1        /******************* ∂® ±∆˜0÷–∂œ≈‰÷√ **********************/
+  70   1        Timer0_12T(); //∂® ±∆˜12∑÷∆µ
+  71   1        Timer0_16bitAutoReload();//16Œª◊‘∂Ø◊∞‘ÿ
+  72   1        Timer0_AsTimer();// ±∆˜0”√◊ˆ∂® ±∆˜
+  73   1        Timer0_Load(Timer0_Reload);
+  74   1        Timer0_InterruptEnable();
+  75   1        Timer0_Run();
+  76   1        
+  77   1        /******************* Õ‚≤ø÷–∂œ1≈‰÷√ *********************/
+  78   1        IT1 = 1;
+  79   1        EX1 = 1;
+  80   1        PX1 = 1;//Õ‚≤ø÷–∂œ1◊Ó∏ﬂ”≈œ»º∂
+  81   1        /*********************************************************/
+  82   1        EA  = 1;// πƒ‹◊‹÷–∂œ
+  83   1        
+  84   1        
+  85   1        while(1)
+  86   1        {
+  87   2          feeddog_to_sgm706 = 1;
+  88   2          delay_ms(250);
+  89   2          feeddog_to_sgm706 = 0;
+  90   2          delay_ms(250);  
+  91   2        }
+  92   1      }
+  93          
+  94          
+  95          /********************** INT0 Õ‚≤ø÷–∂œ∫Ø ˝ ************************/
+  96          void INT1_int (void) interrupt 2    //Ω¯÷–∂œ ±“—æ≠«Â≥˝±Í÷æ
+  97          {
+  98   1        dog_count = 0;
+  99   1        int_number++;
+ 100   1      }
+ 101          
+ 102          
+ 103          /********************** Timer0 20ms÷–∂œ∫Ø ˝ ************************/
+ 104          void timer0 (void) interrupt 1
+ 105          { 
+ 106   1        dog_count++;
+ 107   1      //  if(reset_flags == 2)   //mcu“—æ≠∏¥Œª¡À÷˜øÿ£¨«“÷˜øÿŒππ∑≥Ã–Ú“—æ≠ø™∆Ù
+ 108   1      //  { 
+ 109   1      //    P3M1 &=  ~8;
+ 110   1      //    P3M0 |=  8;  //Õ∆ÕÏ ‰≥ˆ
+ 111   1      //    
+ 112   1      //    if(feeddog_by_b1300)
+ 113   1      //      feeddog_by_b1300 = 0;
+ 114   1      //    else
+ 115   1      //      feeddog_by_b1300 = 1;
+ 116   1      //    
+ 117   1      //    if(dog_count > 500)
+C51 COMPILER V9.00   MAIN                                                                  07/12/2018 14:15:37 PAGE 3   
+
+ 118   1      //    {
+ 119   1      //      reset_flags = 0;
+ 120   1      //      P3M1 |=  8;
+ 121   1      //      P3M0 &=  8;  //∏°ø’ ‰»Î
+ 122   1      //      EX1 = 1;
+ 123   1      //      dog_count = 0;
+ 124   1      //    }
+ 125   1      //  }
+ 126   1      //  
+ 127   1        if(dog_count > dog_time){
+ 128   2          if(dog_flags == 1){
+ 129   3            reset = 0;
+ 130   3            delay_ms(100);  //∏¥Œª÷˜øÿ
+ 131   3            reset = 1;
+ 132   3            reset_flags = 1; //mcu“—æ≠∏¥Œª¡À÷˜øÿ
+ 133   3            dog_flags = 1;  //πÿ±’∏¥Œª÷˜øÿπ¶ƒ‹
+ 134   3          }
+ 135   2          dog_count = 0;  //«Â¡„º∆ ˝∆˜£¨Õ¨ ±∑¿÷πdog_count“Á≥ˆ
+ 136   2        } 
+ 137   1        
+ 138   1        if(dog_count > 100 && int_number !=0){     //‘⁄1√Î ±£¨÷–∂œ¥Œ ˝£®÷–∂œ–≈∫≈∆µ¬ –Ë“™¥Û”⁄0.5Hz£©£ª3~7£∫ø¥√≈π∑ø
+             -™ ºº∆ ±£ª>10ø¥√≈π∑Õ£÷πº∆ ±
+ 139   2      //    if(int_number >= 3 && int_number <= 7){
+ 140   2      //      dog_flags = 1;       //µ⁄“ª¥Œø™∆Ù£¨ø¥√≈π∑ ±º‰º‰∏ÙŒ™3min£¨÷Æ∫ÛŒ™30s
+ 141   2      //      dog_count = 0;
+ 142   2      //      if(reset_flags == 1) //»Áπ˚÷˜øÿ±ª∏¥Œª÷ÿ∆Ù∫Û
+ 143   2      //      {
+ 144   2      //        EX1 = 0;
+ 145   2      //        reset_flags = 2;
+ 146   2      //      }
+ 147   2      //    }
+ 148   2          if(int_number >= 10){
+ 149   3            dog_flags = 0;
+ 150   3            }
+ 151   2          int_number = 0;
+ 152   2        }
+ 153   1      }
+ 154          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    243    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      7    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

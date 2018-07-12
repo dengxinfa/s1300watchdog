@@ -1,0 +1,198 @@
+C51 COMPILER V9.00   MAIN                                                                  07/12/2018 17:09:38 PAGE 1   
+
+
+C51 COMPILER V9.00, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN main.OBJ
+COMPILER INVOKED BY: C:\Program Files (x86)\C51\BIN\C51.EXE main.c BROWSE DEBUG OBJECTEXTEND TABS(2)
+
+line level    source
+
+   1          
+   2          /*---------------------------------------------------------------------*/
+   3          
+   4          #include    <reg52.h>
+   5          /*************  功能说明  **************
+   6          
+   7          GL-S1300硬件看门狗
+   8          
+   9          ******************************************/
+  10          
+  11          /*************  本地常量声明  **************/
+  12          sfr AUXR = 0x8E;
+  13          sfr P3M1  = 0xB1; //P3M1.n,P3M0.n   =00--->Standard,  01--->push-pull
+  14          sfr P3M0  = 0xB2; //          =10--->pure input,  11--->open drai
+  15          
+  16          sbit reset = P3^5;
+  17          sbit feeddog_to_sgm706 = P3^2;
+  18          sbit feeddog_by_b1300 = P3^3;
+  19          
+  20          #define     MAIN_Fosc   22118400L //定义主时钟
+  21          #define   Timer0_Reload (65536UL -(MAIN_Fosc / (12*50)))    //Timer 0 中断频率, 50次/秒
+  22          #define   Timer0_12T()        AUXR &= ~(1<<7) //Timer0 clodk = fo/12  12分频, default
+  23          #define   Timer0_16bitAutoReload()  TMOD &= ~0x03         //16位自动重装
+  24          #define   Timer0_AsTimer()      TMOD &= ~4    //时器0用做定时器
+  25          #define   Timer0_Load(n)    TH0 = (n) / 256,  TL0 = (n) % 256
+  26          #define   Timer0_InterruptEnable()  ET0 = 1       //允许Timer1中断.
+  27          #define   Timer0_Run()        TR0 = 1       //允许定时器0计数
+  28          
+  29          #define   watchdog_of_b1300_s    600 //时间单位 30*50 每计数50次为一秒
+  30          
+  31          /*************  本地变量声明  **************/
+  32          
+  33          //unsigned int dog_time = watchdog_of_b1300_first_s;
+  34          unsigned int dog_time ;//= watchdog_of_b1300_s;
+  35          unsigned int dog_count;// = 0;
+  36          unsigned char int_number; //= 0;
+  37          unsigned char dog_flags; //= 0;
+  38          unsigned char reset_flags;//= 0; //复位标志，向主控发送脉冲
+  39          /*************  本地函数声明  **************/
+  40          
+  41          
+  42          
+  43          /*************  延时函数 *****************/
+  44          
+  45          void  delay_ms(unsigned int ms)
+  46          {
+  47   1           unsigned int i,j=0,k=0;
+  48   1         i = MAIN_Fosc / 21000UL;
+  49   1         for(k=0;k<ms;k++)
+  50   1              for(j=0;j<i;j++);
+  51   1      }
+  52          
+  53          /******************** 主函数 **************************/
+  54          void main(void)
+  55          { 
+C51 COMPILER V9.00   MAIN                                                                  07/12/2018 17:09:38 PAGE 2   
+
+  56   1       dog_time = watchdog_of_b1300_s;
+  57   1       dog_count= 0;
+  58   1       int_number= 0;
+  59   1       dog_flags= 0;
+  60   1       reset_flags= 0; //复位标志，向主控发送脉冲
+  61   1        /******************** IO配置函数 **************************/
+  62   1        P3M1 &= ~4;
+  63   1        P3M0 |=  4;  //推挽输出
+  64   1        P3M1 |=  8;
+  65   1        P3M0 &= ~8;  //浮空输入
+  66   1        P3M1 &= ~32;
+  67   1        P3M0 |=  32;   //推挽输出
+  68   1        reset = 1;
+  69   1        /******************* 定时器0中断配置 **********************/
+  70   1        Timer0_12T(); //定时器12分频
+  71   1        Timer0_16bitAutoReload();//16位自动装载
+  72   1        Timer0_AsTimer();//时器0用做定时器
+  73   1        Timer0_Load(Timer0_Reload);
+  74   1        Timer0_InterruptEnable();
+  75   1        Timer0_Run();
+  76   1        
+  77   1        /******************* 外部中断1配置 *********************/
+  78   1        IT1 = 1;
+  79   1        EX1 = 1;
+  80   1        PX1 = 1;//外部中断1最高优先级
+  81   1        /*********************************************************/
+  82   1        EA  = 1;//使能总中断
+  83   1        
+  84   1        
+  85   1        while(1)
+  86   1        {
+  87   2          feeddog_to_sgm706 = 1;
+  88   2          delay_ms(250);
+  89   2          feeddog_to_sgm706 = 0;
+  90   2          delay_ms(250);  
+  91   2        }
+  92   1      }
+  93          
+  94          
+  95          /********************** INT0 外部中断函数 ************************/
+  96          void INT1_int (void) interrupt 2    //进中断时已经清除标志
+  97          {
+  98   1        dog_count = 0;
+  99   1        int_number++;
+ 100   1      }
+ 101          
+ 102          
+ 103          /********************** Timer0 20ms中断函数 ************************/
+ 104          void timer0 (void) interrupt 1
+ 105          { 
+ 106   1        static i;
+ 107   1        dog_count++;
+ 108   1        if(reset_flags == 2)   //mcu已经复位了主控，且主控喂狗程序已经开启
+ 109   1        { 
+ 110   2          if(i > 10)
+ 111   2          {
+ 112   3            feeddog_by_b1300 = 0;
+ 113   3          }
+ 114   2          if(i > 20)
+ 115   2          {
+ 116   3            feeddog_by_b1300 = 1;
+ 117   3            i = 0;
+C51 COMPILER V9.00   MAIN                                                                  07/12/2018 17:09:38 PAGE 3   
+
+ 118   3          }
+ 119   2          if(dog_count > 200)
+ 120   2          {
+ 121   3            reset_flags = 0;  //退出发送记录脉冲
+ 122   3            dog_flags = 1;  //使能超时复位主控
+ 123   3            P3M1 |=  8;
+ 124   3            P3M0 &= ~8;  //浮空输入
+ 125   3            EX1 = 1;
+ 126   3            dog_count = 0;
+ 127   3          }
+ 128   2          i++;
+ 129   2        }
+ 130   1        
+ 131   1        if(dog_count > dog_time){
+ 132   2          if(dog_flags == 1){
+ 133   3            reset = 0;
+ 134   3            delay_ms(100);  //复位主控
+ 135   3            reset = 1;
+ 136   3            reset_flags = 1; //mcu已经复位了主控
+ 137   3            dog_flags = 0;  //关闭复位主控功能
+ 138   3          }
+ 139   2          dog_count = 0;  //清零计数器，同时防止dog_count溢出
+ 140   2        } 
+ 141   1        
+ 142   1        if(dog_count > 50 && int_number !=0){     //在1秒时，中断次数（中断信号频率需要大于0.5Hz）；3~7：看门狗开
+             -始计时；>10看门狗停止计时
+ 143   2          if(int_number >= 3 && int_number <= 7){
+ 144   3            dog_flags = 1;       //第一次开启，看门狗时间间隔为3min，之后为30s
+ 145   3            dog_count = 0;
+ 146   3            if(reset_flags == 1) //如果主控被复位重启后
+ 147   3            {
+ 148   4              reset_flags = 2;  //发送脉冲记录复位主控
+ 149   4              dog_flags = 0;    //禁止复位主控
+ 150   4              EX1 = 0;         //关闭中段
+ 151   4              P3M1 &=  ~8;
+ 152   4              P3M0 |=  8;  //推挽输出
+ 153   4            }
+ 154   3            else
+ 155   3            {
+ 156   4              reset_flags = 0; //主控没有被复位重启
+ 157   4              P3M1 |=  8;
+ 158   4              P3M0 &= ~8;  //浮空输入
+ 159   4              EX1 = 1;     //开启中断
+ 160   4            }
+ 161   3          }
+ 162   2          if(int_number >= 10){
+ 163   3            dog_flags = 0;
+ 164   3            }
+ 165   2          int_number = 0;
+ 166   2        }
+ 167   1      }
+ 168          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    380    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      9    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+C51 COMPILER V9.00   MAIN                                                                  07/12/2018 17:09:38 PAGE 4   
+
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

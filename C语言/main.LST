@@ -1,0 +1,178 @@
+C51 COMPILER V9.00   MAIN                                                                  04/04/2018 18:03:07 PAGE 1   
+
+
+C51 COMPILER V9.00, COMPILATION OF MODULE MAIN
+OBJECT MODULE PLACED IN main.OBJ
+COMPILER INVOKED BY: C:\Program Files (x86)\KEIL\C51\BIN\C51.EXE main.c BROWSE DEBUG OBJECTEXTEND
+
+line level    source
+
+   1          /*---------------------------------------------------------------------*/
+   2          /* --- STC MCU International Limited ----------------------------------*/
+   3          /* --- STC 1T Series MCU Demo Programme -------------------------------*/
+   4          /* --- Mobile: (86)13922805190 ----------------------------------------*/
+   5          /* --- Fax: 86-0513-55012956,55012947,55012969 ------------------------*/
+   6          /* --- Tel: 86-0513-55012928,55012929,55012966 ------------------------*/
+   7          /* --- Web: www.GXWMCU.com --------------------------------------------*/
+   8          /* --- QQ:  800003751 -------------------------------------------------*/
+   9          /* 如果要在程序中使用此代码,请在程序中注明使用了宏晶科技的资料及程序   */
+  10          /*---------------------------------------------------------------------*/
+  11          
+  12          #include    <reg52.h>
+  13          
+  14          /*************  本地常量声明    **************/
+  15          sfr     AUXR = 0x8E;
+  16          sfr P3M1  = 0xB1;       //P3M1.n,P3M0.n         =00--->Standard,        01--->push-pull
+  17          sfr P3M0  = 0xB2;       //                                      =10--->pure input,      11--->open drai
+  18          sfr WDT_CONTR = 0xC1; //看门狗寄存器
+  19          sfr INT_CLKO  = 0x8f;
+  20          
+  21          sbit reset = P3^3;
+  22          sbit feeddog_to_sgm706 = P3^2;
+  23          sbit feeddog_by_b1300 = P3^5;
+  24          //sbit P11 = P1^1;
+  25          
+  26          #define     MAIN_Fosc           22118400L       //定义主时钟
+  27          #define         Timer0_Reload   (65536UL -(MAIN_Fosc / (12*50)))                //Timer 0 中断频率, 50次/秒
+  28          #define         Timer0_12T()                            AUXR &= ~(1<<7) //Timer0 clodk = fo/12  12分频, default
+  29          #define         Timer0_16bitAutoReload()        TMOD &= ~0x03                                   //16位自动重装
+  30          #define         Timer0_AsTimer()                        TMOD &= ~4              //时器0用做定时器
+  31          #define         Timer0_Load(n)          TH0 = (n) / 256,        TL0 = (n) % 256
+  32          #define         Timer0_InterruptEnable()        ET0 = 1                         //允许Timer0中断.
+  33          #define         Timer0_Run()                            TR0 = 1                         //允许定时器0计数
+  34          
+  35          #define D_WDT_FLAG                      (1<<7)
+  36          #define D_EN_WDT                        (1<<5)
+  37          #define D_CLR_WDT                       (1<<4)  //auto clear
+  38          #define D_IDLE_WDT                      (1<<3)  //WDT counter when Idle
+  39          //#define D_WDT_SCALE_2         0
+  40          //#define D_WDT_SCALE_4         1
+  41          //#define D_WDT_SCALE_8         2               //T=393216*N/fo
+  42          //#define D_WDT_SCALE_16                3
+  43          //#define D_WDT_SCALE_32                4
+  44          //#define D_WDT_SCALE_64                5
+  45          #define D_WDT_SCALE_128         6
+  46          //#define D_WDT_SCALE_256               7
+  47          #define WDT_reset(n)    WDT_CONTR = D_EN_WDT + D_CLR_WDT + D_IDLE_WDT + (n)             //初始化WDT，喂狗
+  48          
+  49          #define     WatchDog_Of_B1300_S    60 //时间单位s
+  50          #define     WatchDog_Of_STC15_MS    1600 //时间单位ms
+  51          /*************  本地变量声明    **************/
+  52          
+  53          unsigned long dog_count = 0;
+  54          unsigned long watchdog_of_b1300 = WatchDog_Of_B1300_S;
+  55          /*************  本地函数声明    **************/
+C51 COMPILER V9.00   MAIN                                                                  04/04/2018 18:03:07 PAGE 2   
+
+  56          
+  57          
+  58          
+  59          /*************  延时函数 *****************/
+  60          
+  61          void  delay_ms(unsigned long ms)
+  62          {
+  63   1           unsigned int i,j=0,k=0;
+  64   1               i = MAIN_Fosc / 21000UL;
+  65   1               for(k=0;k<ms;k++)
+  66   1              for(j=0;j<i;j++);
+  67   1      }
+  68          
+  69          /****************复位函数**************************/
+  70          void reset_b1300(void)
+  71          {
+  72   1                      reset = 0;
+  73   1                      delay_ms(250);
+  74   1                      reset = 1;
+  75   1      }
+  76          /******************** IO配置函数 **************************/
+  77          void GPIO_config(void)
+  78          {
+  79   1              P3M1 &= ~4;
+  80   1              P3M0 |=  4;      //p32推挽输出
+  81   1              P3M1 &= ~8;
+  82   1              P3M0 |=  8;      //p33推挽输出
+  83   1              P3M1 |=  32;
+  84   1              P3M0 &= ~32;  //p35浮空输入
+  85   1              reset = 1;
+  86   1      }
+  87          
+  88          /******************* 定时器0中断配置 **********************/
+  89          void time0_interrupt_init(void)
+  90          {
+  91   1              Timer0_12T(); //定时器12分频
+  92   1              Timer0_16bitAutoReload();//16位自动装载
+  93   1              Timer0_AsTimer();//时器0用做定时器
+  94   1              Timer0_Load(Timer0_Reload);
+  95   1              Timer0_InterruptEnable();
+  96   1              Timer0_Run();
+  97   1      }
+  98          
+  99          /******************* 外部中断1配置 *********************/
+ 100          //void ext_interrupt1_init(void)
+ 101          //{
+ 102          //      IT1 = 1;
+ 103          //      EX1 = 1;
+ 104          //      PX1 = 1;//外部中断1最高优先级
+ 105          //}
+ 106          /******************** 主函数 **************************/
+ 107          void main(void)
+ 108          {       
+ 109   1              
+ 110   1              GPIO_config();//GPIO初始化
+ 111   1              //WDT_reset(D_WDT_SCALE_128);//看门狗初始化
+ 112   1              time0_interrupt_init();//定时器初始化
+ 113   1              //ext_interrupt1_init();//外部中断初始化
+ 114   1              
+ 115   1              INT_CLKO = 0x20;//外部中断4使能'
+ 116   1              EA  = 1;//使能总中断    
+ 117   1              delay_ms(5000);
+C51 COMPILER V9.00   MAIN                                                                  04/04/2018 18:03:07 PAGE 3   
+
+ 118   1              while(1)
+ 119   1              {
+ 120   2                      //WDT_reset(D_WDT_SCALE_128);//喂狗（本芯片）
+ 121   2                                      
+ 122   2                      feeddog_to_sgm706 = 1;
+ 123   2                      delay_ms(300);
+ 124   2                      feeddog_to_sgm706 = 0;
+ 125   2                      delay_ms(300);
+ 126   2              }
+ 127   1      }
+ 128          
+ 129          
+ 130          /********************** INT0 外部中断函数 ************************/
+ 131          void exint3 (void) interrupt 11         //进中断时已经清除标志
+ 132          {
+ 133   1              
+ 134   1              dog_count = 0;
+ 135   1              INT_CLKO &= 0xdf;//手动清零 
+ 136   1              INT_CLKO |= 0x20;//开启中断4
+ 137   1      
+ 138   1      }
+ 139          
+ 140          
+ 141          /********************** Timer0 1ms中断函数 ************************/
+ 142          void timer0 (void) interrupt 1
+ 143          {
+ 144   1              if(dog_count > 500){
+ 145   2                      reset_b1300();
+ 146   2                      dog_count = 0;
+ 147   2              }
+ 148   1              else
+ 149   1                      dog_count++;
+ 150   1      }
+ 151          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    299    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      8       8
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
