@@ -31,7 +31,7 @@ feed_dog()
 detect_reboot_by_hw_watchdog()
 {	
 	echo in >/sys/class/gpio/gpio$GPIO/direction
-	for i in $(seq 1 4)
+	for i in $(seq 1 8)
 	do
 		v0=$(cat /sys/class/gpio/gpio${GPIO}/value)
 		sleep 0.1
@@ -41,7 +41,11 @@ detect_reboot_by_hw_watchdog()
 		sleep 0.1
 		v3=$(cat /sys/class/gpio/gpio${GPIO}/value)
 		sleep 0.1
-		if [ "$v0" = "$v1" -a "$v1" = "$v2" -a "$v2" = "$v3" ]; then
+		v4=$(cat /sys/class/gpio/gpio${GPIO}/value)
+                sleep 0.1                                  
+                v5=$(cat /sys/class/gpio/gpio${GPIO}/value)                        
+                sleep 0.1
+		if [ "$v0" = "$v1" -a "$v1" = "$v2" -a "$v2" = "$v3" -a "$v3" = "$v4" -a "$v4" = "$v5" ]; then
 			no_pulse=$(($no_pulse + 1));
 		fi
 		sleep 0.4
@@ -53,11 +57,13 @@ no_pulse=0
 
 detect_reboot_by_hw_watchdog
 
-[ "$no_pulse" -lt 4 ] && echo "$(date +%Y-%m-%d/%T) reset" >> /reset_by_hw_watchdog
+[ "$no_pulse" -lt 7 ] && echo "$(date +%Y-%m-%d/%T) reset" >> /reset_by_hw_watchdog
+
+echo out >/sys/class/gpio/gpio${GPIO}/direction 
 
 while true; do
 	feed_dog
-	sleep 3
+	sleep 10
 done
 
 

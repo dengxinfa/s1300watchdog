@@ -26,7 +26,7 @@ sbit feeddog_by_b1300 = P3^3;
 #define 	Timer0_InterruptEnable()	ET0 = 1				//允许Timer1中断.
 #define 	Timer0_Run()	 			TR0 = 1				//允许定时器0计数
 
-#define   watchdog_of_b1300_s    600 //时间单位 30*50 每计数50次为一秒
+#define   watchdog_of_b1300_s    1650 //时间单位 30*50 每计数50次为一秒
 
 /*************	本地变量声明	**************/
 
@@ -73,7 +73,7 @@ void main(void)
 	Timer0_Load(Timer0_Reload);
 	Timer0_InterruptEnable();
 	Timer0_Run();
-	
+
 	/******************* 外部中断1配置 *********************/
 	IT1 = 1;
 	EX1 = 1;
@@ -105,7 +105,7 @@ void timer0 (void) interrupt 1
 {	
 	static i;
 	dog_count++;
-	if(reset_flags == 2)   //mcu已经复位了主控，且主控喂狗程序已经开启
+	if(reset_flags >= 2)   //mcu已经复位了主控，且主控喂狗程序已经开启
 	{	
 		if(i > 10)
 		{
@@ -116,10 +116,10 @@ void timer0 (void) interrupt 1
 			feeddog_by_b1300 = 1;
 			i = 0;
 		}
-		if(dog_count > 200)
+		if(dog_count > 400)
 		{
 			reset_flags = 0;  //退出发送记录脉冲
-			dog_flags = 1;  //使能超时复位主控
+			dog_flags = 0;  //关闭超时复位主控
 			P3M1 |=  8;
 		  P3M0 &= ~8;	 //浮空输入
 			EX1 = 1;
@@ -136,7 +136,14 @@ void timer0 (void) interrupt 1
 			reset_flags = 1; //mcu已经复位了主控
 			dog_flags = 0;  //关闭复位主控功能
 		}
-		dog_count = 0;  //清零计数器，同时防止dog_count溢出
+		else
+		{
+			dog_count = 0;  //清零计数器，同时防止dog_count溢出
+			P3M1 |=  8;
+		  P3M0 &= ~8;	 //浮空输入
+			EX1 = 1;
+			PX1 = 1;
+		}
 	} 
 	
 	if(dog_count > 50 && int_number !=0){     //在1秒时，中断次数（中断信号频率需要大于0.5Hz）；3~7：看门狗开始计时；>10看门狗停止计时
@@ -150,13 +157,6 @@ void timer0 (void) interrupt 1
 				EX1 = 0;         //关闭中段
 				P3M1 &=  ~8;
 		    P3M0 |=  8;	 //推挽输出
-			}
-			else
-			{
-				reset_flags = 0; //主控没有被复位重启
-				P3M1 |=  8;
-		    P3M0 &= ~8;	 //浮空输入
-			  EX1 = 1;     //开启中断
 			}
 		}
 		if(int_number >= 10){

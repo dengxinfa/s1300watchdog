@@ -1,4 +1,4 @@
-C51 COMPILER V9.00   MAIN                                                                  07/12/2018 17:09:38 PAGE 1   
+C51 COMPILER V9.00   MAIN                                                                  07/13/2018 11:29:15 PAGE 1   
 
 
 C51 COMPILER V9.00, COMPILATION OF MODULE MAIN
@@ -35,7 +35,7 @@ line level    source
   26          #define   Timer0_InterruptEnable()  ET0 = 1       //允许Timer1中断.
   27          #define   Timer0_Run()        TR0 = 1       //允许定时器0计数
   28          
-  29          #define   watchdog_of_b1300_s    600 //时间单位 30*50 每计数50次为一秒
+  29          #define   watchdog_of_b1300_s    1650 //时间单位 30*50 每计数50次为一秒
   30          
   31          /*************  本地变量声明  **************/
   32          
@@ -62,7 +62,7 @@ line level    source
   53          /******************** 主函数 **************************/
   54          void main(void)
   55          { 
-C51 COMPILER V9.00   MAIN                                                                  07/12/2018 17:09:38 PAGE 2   
+C51 COMPILER V9.00   MAIN                                                                  07/13/2018 11:29:15 PAGE 2   
 
   56   1       dog_time = watchdog_of_b1300_s;
   57   1       dog_count= 0;
@@ -84,7 +84,7 @@ line level    source
   73   1        Timer0_Load(Timer0_Reload);
   74   1        Timer0_InterruptEnable();
   75   1        Timer0_Run();
-  76   1        
+  76   1      
   77   1        /******************* 外部中断1配置 *********************/
   78   1        IT1 = 1;
   79   1        EX1 = 1;
@@ -116,7 +116,7 @@ line level    source
  105          { 
  106   1        static i;
  107   1        dog_count++;
- 108   1        if(reset_flags == 2)   //mcu已经复位了主控，且主控喂狗程序已经开启
+ 108   1        if(reset_flags >= 2)   //mcu已经复位了主控，且主控喂狗程序已经开启
  109   1        { 
  110   2          if(i > 10)
  111   2          {
@@ -126,13 +126,13 @@ line level    source
  115   2          {
  116   3            feeddog_by_b1300 = 1;
  117   3            i = 0;
-C51 COMPILER V9.00   MAIN                                                                  07/12/2018 17:09:38 PAGE 3   
+C51 COMPILER V9.00   MAIN                                                                  07/13/2018 11:29:15 PAGE 3   
 
  118   3          }
- 119   2          if(dog_count > 200)
+ 119   2          if(dog_count > 400)
  120   2          {
  121   3            reset_flags = 0;  //退出发送记录脉冲
- 122   3            dog_flags = 1;  //使能超时复位主控
+ 122   3            dog_flags = 0;  //关闭超时复位主控
  123   3            P3M1 |=  8;
  124   3            P3M0 &= ~8;  //浮空输入
  125   3            EX1 = 1;
@@ -149,28 +149,28 @@ line level    source
  136   3            reset_flags = 1; //mcu已经复位了主控
  137   3            dog_flags = 0;  //关闭复位主控功能
  138   3          }
- 139   2          dog_count = 0;  //清零计数器，同时防止dog_count溢出
- 140   2        } 
- 141   1        
- 142   1        if(dog_count > 50 && int_number !=0){     //在1秒时，中断次数（中断信号频率需要大于0.5Hz）；3~7：看门狗开
+ 139   2          else
+ 140   2          {
+ 141   3            dog_count = 0;  //清零计数器，同时防止dog_count溢出
+ 142   3            P3M1 |=  8;
+ 143   3            P3M0 &= ~8;  //浮空输入
+ 144   3            EX1 = 1;
+ 145   3            PX1 = 1;
+ 146   3          }
+ 147   2        } 
+ 148   1        
+ 149   1        if(dog_count > 50 && int_number !=0){     //在1秒时，中断次数（中断信号频率需要大于0.5Hz）；3~7：看门狗开
              -始计时；>10看门狗停止计时
- 143   2          if(int_number >= 3 && int_number <= 7){
- 144   3            dog_flags = 1;       //第一次开启，看门狗时间间隔为3min，之后为30s
- 145   3            dog_count = 0;
- 146   3            if(reset_flags == 1) //如果主控被复位重启后
- 147   3            {
- 148   4              reset_flags = 2;  //发送脉冲记录复位主控
- 149   4              dog_flags = 0;    //禁止复位主控
- 150   4              EX1 = 0;         //关闭中段
- 151   4              P3M1 &=  ~8;
- 152   4              P3M0 |=  8;  //推挽输出
- 153   4            }
- 154   3            else
- 155   3            {
- 156   4              reset_flags = 0; //主控没有被复位重启
- 157   4              P3M1 |=  8;
- 158   4              P3M0 &= ~8;  //浮空输入
- 159   4              EX1 = 1;     //开启中断
+ 150   2          if(int_number >= 3 && int_number <= 7){
+ 151   3            dog_flags = 1;       //第一次开启，看门狗时间间隔为3min，之后为30s
+ 152   3            dog_count = 0;
+ 153   3            if(reset_flags == 1) //如果主控被复位重启后
+ 154   3            {
+ 155   4              reset_flags = 2;  //发送脉冲记录复位主控
+ 156   4              dog_flags = 0;    //禁止复位主控
+ 157   4              EX1 = 0;         //关闭中段
+ 158   4              P3M1 &=  ~8;
+ 159   4              P3M0 |=  8;  //推挽输出
  160   4            }
  161   3          }
  162   2          if(int_number >= 10){
@@ -190,7 +190,7 @@ MODULE INFORMATION:   STATIC OVERLAYABLE
    DATA SIZE        =      9    ----
    IDATA SIZE       =   ----    ----
    BIT SIZE         =   ----    ----
-C51 COMPILER V9.00   MAIN                                                                  07/12/2018 17:09:38 PAGE 4   
+C51 COMPILER V9.00   MAIN                                                                  07/13/2018 11:29:15 PAGE 4   
 
 END OF MODULE INFORMATION.
 
